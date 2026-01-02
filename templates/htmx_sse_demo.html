@@ -157,14 +157,20 @@
                 </div>
             </div>
             
-            <!-- SSE Connection Container -->
-            <div class="h-96 overflow-y-auto p-4 bg-gray-50" 
-                 id="sse-feed"
+            <!-- Hidden SSE connector that controls the connection -->
+            <div x-show="connectionStatus === 'connected' || connectionStatus === 'connecting'"
                  hx-ext="sse"
-                 x-show="connectionStatus === 'connected'"
                  sse-connect="/sse-stream"
                  sse-swap="message"
-                 hx-swap="beforeend">
+                 hx-target="#sse-feed"
+                 hx-swap="beforeend"
+                 style="position: absolute; visibility: hidden; height: 0; overflow: hidden;">
+            </div>
+            
+            <!-- SSE Feed Container - Content is preserved here -->
+            <div class="h-96 overflow-y-auto p-4 bg-gray-50" 
+                 id="sse-feed"
+                 x-show="connectionStatus !== 'disconnected'">
                 
                 <!-- Data will be inserted here by HTMX SSE -->
             </div>
@@ -233,6 +239,7 @@
             return {
                 connectionStatus: 'disconnected', // 'disconnected', 'connecting', 'connected'
                 connectionStartTime: null,
+                currentTime: Date.now(), // Add reactive property for time updates
                 stats: {
                     totalEvents: 0,
                     eventsPerMinute: 0,
@@ -252,7 +259,8 @@
                         return '00:00';
                     }
                     
-                    const elapsed = Math.floor((Date.now() - this.connectionStartTime) / 1000);
+                    // Use this.currentTime to make this getter reactive
+                    const elapsed = Math.floor((this.currentTime - this.connectionStartTime) / 1000);
                     const minutes = Math.floor(elapsed / 60);
                     const seconds = elapsed % 60;
                     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
@@ -264,63 +272,73 @@
                     
                     // Update connection time every second
                     setInterval(() => {
-                        // Trigger reactivity for connectionTime
-                        this.$nextTick();
+                        this.currentTime = Date.now();
                     }, 1000);
                 },
                 
                 setupSSEListeners() {
-                    // Listen for SSE connection events
+                    // Listen for HTMX SSE connection events
                     document.body.addEventListener('htmx:sseOpen', (event) => {
-                        console.log('SSE connection opened');
+                        console.log('SSE connection opened via HTMX');
                         this.connectionStatus = 'connected';
-                        this.connectionStartTime = Date.now();
+                        // Don't override connectionStartTime if it's already set from startConnection
+                        if (!this.connectionStartTime) {
+                            this.connectionStartTime = Date.now();
+                        }
+                        console.log('Connection established, start time:', this.connectionStartTime);
                     });
                     
                     document.body.addEventListener('htmx:sseError', (event) => {
-                        console.log('SSE connection error:', event.detail);
+                        console.log('SSE connection error via HTMX:', event.detail);
                         this.connectionStatus = 'disconnected';
                         this.connectionStartTime = null;
                     });
                     
                     document.body.addEventListener('htmx:sseClose', (event) => {
-                        console.log('SSE connection closed');
+                        console.log('SSE connection closed via HTMX');
                         this.connectionStatus = 'disconnected';
                         this.connectionStartTime = null;
                     });
                     
-                    // Listen for new messages to update stats
+                    // Listen for SSE message events specifically
+                    document.body.addEventListener('htmx:sseMessage', (event) => {
+                        console.log('SSE message received:', event.detail);
+                        // Update stats when message is received
+                        this.updateStats();
+                    });
+                    
+                    // Listen for DOM updates after SSE messages are swapped
                     document.body.addEventListener('htmx:afterSwap', (event) => {
                         if (event.target.id === 'sse-feed') {
-                            this.updateStats();
                             this.limitFeedItems();
+                            this.scrollToBottom();
+                        }
+                    });
+                    
+                    // Listen for HTMX request events to handle connection state
+                    document.body.addEventListener('htmx:beforeRequest', (event) => {
+                        if (event.detail.elt.id === 'sse-feed') {
+                            console.log('SSE connection starting...');
+                            this.connectionStatus = 'connecting';
                         }
                     });
                 },
                 
                 startConnection() {
                     this.connectionStatus = 'connecting';
-                    
-                    // Trigger HTMX SSE connection
-                    const feedElement = document.getElementById('sse-feed');
-                    if (feedElement) {
-                        // Clear any existing connection
-                        htmx.trigger(feedElement, 'htmx:sseClose');
-                        
-                        // Start new connection
-                        htmx.process(feedElement);
-                    }
+                    this.connectionStartTime = Date.now(); // Set start time immediately
+                    console.log('Starting SSE connection...', 'Start time:', this.connectionStartTime);
+                    // The hidden SSE connector will automatically establish connection
+                    // when it becomes visible due to x-show condition
                 },
                 
                 stopConnection() {
                     this.connectionStatus = 'disconnected';
                     this.connectionStartTime = null;
-                    
-                    // Close HTMX SSE connection
-                    const feedElement = document.getElementById('sse-feed');
-                    if (feedElement) {
-                        htmx.trigger(feedElement, 'htmx:sseClose');
-                    }
+                    console.log('SSE connection stopped - content preserved');
+                    // The hidden SSE connector will automatically close connection
+                    // when it becomes hidden due to x-show condition
+                    // Content in #sse-feed remains untouched
                 },
                 
                 clearFeed() {
@@ -352,16 +370,51 @@
                     const feedElement = document.getElementById('sse-feed');
                     if (feedElement) {
                         const items = feedElement.querySelectorAll('.data-item');
-                        // Keep only last 50 items
-                        if (items.length > 50) {
-                            for (let i = 0; i < items.length - 50; i++) {
+                        const maxItems = 50; // Limit to 50 items for performance
+                        
+                        // Remove oldest items if we exceed the limit
+                        if (items.length > maxItems) {
+                            const itemsToRemove = items.length - maxItems;
+                            for (let i = 0; i < itemsToRemove; i++) {
                                 items[i].remove();
                             }
                         }
-                        
-                        // Auto-scroll to bottom
-                        feedElement.scrollTop = feedElement.scrollHeight;
                     }
+                },
+                
+                scrollToBottom() {
+                    const feedElement = document.getElementById('sse-feed');
+                    if (feedElement) {
+                        // Smooth scroll to bottom to show latest data
+                        feedElement.scrollTo({
+                            top: feedElement.scrollHeight,
+                            behavior: 'smooth'
+                        });
+                    }
+                },
+                
+                // Event handlers for HTMX SSE events
+                handleSSEOpen() {
+                    console.log('SSE connection opened via HTMX event handler');
+                    this.connectionStatus = 'connected';
+                    this.connectionStartTime = Date.now();
+                },
+                
+                handleSSEError(event) {
+                    console.log('SSE connection error via HTMX event handler:', event);
+                    this.connectionStatus = 'disconnected';
+                    this.connectionStartTime = null;
+                },
+                
+                handleSSEClose() {
+                    console.log('SSE connection closed via HTMX event handler');
+                    this.connectionStatus = 'disconnected';
+                    this.connectionStartTime = null;
+                },
+                
+                handleSSEMessage(event) {
+                    console.log('SSE message received via HTMX event handler:', event);
+                    this.updateStats();
                 }
             }
         }

@@ -41,42 +41,85 @@ app.add_middleware(
 class SSEConnectionManager:
     def __init__(self):
         self.active_connections = set()
+        self.connection_health = {}  # Track connection health
     
     def add_connection(self, connection_id: str):
         """Add a connection to the active set"""
         self.active_connections.add(connection_id)
+        self.connection_health[connection_id] = {
+            'start_time': datetime.now(),
+            'last_ping': datetime.now(),
+            'error_count': 0
+        }
         logger.info(f"SSE connection added: {connection_id}")
     
     def remove_connection(self, connection_id: str):
         """Remove a connection from the active set"""
         self.active_connections.discard(connection_id)
+        self.connection_health.pop(connection_id, None)
         logger.info(f"SSE connection removed: {connection_id}")
     
-    async def generate_data_stream(self) -> AsyncGenerator[str, None]:
-        """Generate simulated sensor data stream"""
+    def update_connection_health(self, connection_id: str, error: bool = False):
+        """Update connection health status"""
+        if connection_id in self.connection_health:
+            self.connection_health[connection_id]['last_ping'] = datetime.now()
+            if error:
+                self.connection_health[connection_id]['error_count'] += 1
+    
+    async def generate_data_stream(self, connection_id: str = None) -> AsyncGenerator[str, None]:
+        """Generate simulated sensor data stream with error handling"""
+        consecutive_errors = 0
+        max_consecutive_errors = 3
+        
         try:
             while True:
-                # Generate simulated sensor data
-                sensor_data = SensorReading(
-                    temperature=round(random.uniform(18.0, 28.0), 1),
-                    humidity=round(random.uniform(30.0, 80.0), 1),
-                    pressure=round(random.uniform(1000.0, 1020.0), 1),
-                    timestamp=datetime.now()
-                )
-                
-                # Format as SSE event
-                html_data = sensor_data.to_html()
-                sse_event = f"data: {html_data}\n\n"
-                
-                yield sse_event
-                
-                # Wait for random interval between 0.5 and 2 seconds
-                await asyncio.sleep(random.uniform(0.5, 2.0))
+                try:
+                    # Generate simulated sensor data
+                    sensor_data = SensorReading(
+                        temperature=round(random.uniform(18.0, 28.0), 1),
+                        humidity=round(random.uniform(30.0, 80.0), 1),
+                        pressure=round(random.uniform(1000.0, 1020.0), 1),
+                        timestamp=datetime.now()
+                    )
+                    
+                    # Format as SSE event
+                    html_data = sensor_data.to_html()
+                    sse_event = f"event: message\ndata: {html_data}\n\n"
+                    
+                    # Update connection health on successful data generation
+                    if connection_id:
+                        self.update_connection_health(connection_id)
+                    
+                    consecutive_errors = 0  # Reset error counter on success
+                    yield sse_event
+                    
+                    # Wait for random interval between 0.5 and 2 seconds
+                    await asyncio.sleep(random.uniform(0.5, 2.0))
+                    
+                except Exception as data_error:
+                    consecutive_errors += 1
+                    logger.error(f"Error generating sensor data: {data_error}")
+                    
+                    if connection_id:
+                        self.update_connection_health(connection_id, error=True)
+                    
+                    if consecutive_errors >= max_consecutive_errors:
+                        # Send error event to client
+                        error_event = f"event: error\ndata: Data generation failed after {max_consecutive_errors} attempts\n\n"
+                        yield error_event
+                        break
+                    
+                    # Wait before retrying
+                    await asyncio.sleep(1.0)
                 
         except asyncio.CancelledError:
             logger.info("SSE data stream cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Error in SSE data stream: {e}")
+            logger.error(f"Critical error in SSE data stream: {e}")
+            # Send final error event
+            error_event = f"event: error\ndata: Critical stream error: {str(e)}\n\n"
+            yield error_event
 
 sse_manager = SSEConnectionManager()
 
@@ -178,21 +221,49 @@ async def get_data_stream_page(request: Request):
 async def get_sse_demo_page(request: Request):
     return templates.TemplateResponse("htmx_sse_demo.html", {"request": request})
 
+@app.get("/sse-health")
+async def sse_health():
+    """Health check endpoint for SSE connections"""
+    return {
+        "active_connections": len(sse_manager.active_connections),
+        "connection_details": {
+            conn_id: {
+                "uptime_seconds": (datetime.now() - health['start_time']).total_seconds(),
+                "last_ping_seconds_ago": (datetime.now() - health['last_ping']).total_seconds(),
+                "error_count": health['error_count']
+            }
+            for conn_id, health in sse_manager.connection_health.items()
+        }
+    }
+
 @app.get("/sse-stream")
 async def sse_stream():
-    """SSE endpoint that streams sensor data"""
+    """SSE endpoint that streams sensor data with enhanced error handling"""
     import uuid
     connection_id = str(uuid.uuid4())
     
     async def event_stream():
         sse_manager.add_connection(connection_id)
         try:
-            async for event in sse_manager.generate_data_stream():
+            # Send initial connection confirmation
+            yield "event: connected\ndata: Connection established\n\n"
+            
+            async for event in sse_manager.generate_data_stream(connection_id):
                 yield event
         except asyncio.CancelledError:
             logger.info(f"SSE stream cancelled for connection: {connection_id}")
+            # Send close event before terminating
+            try:
+                yield "event: close\ndata: Connection closed\n\n"
+            except:
+                pass  # Client may have already disconnected
         except Exception as e:
             logger.error(f"Error in SSE stream for connection {connection_id}: {e}")
+            # Send error event to client
+            try:
+                yield f"event: error\ndata: Server error occurred: {str(e)}\n\n"
+            except:
+                pass  # Client may have already disconnected
         finally:
             sse_manager.remove_connection(connection_id)
     
@@ -204,6 +275,7 @@ async def sse_stream():
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
 

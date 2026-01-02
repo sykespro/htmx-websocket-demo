@@ -51,9 +51,9 @@
                 <div class="flex items-center space-x-4">
                     <!-- Connection Status -->
                     <div class="flex items-center space-x-2" 
-                         :class="connectionStatus === 'connected' ? 'text-green-600' : connectionStatus === 'connecting' ? 'text-yellow-600' : 'text-red-600'">
+                         :class="connectionStatus === 'connected' ? 'text-green-600' : connectionStatus === 'connecting' ? 'text-yellow-600' : connectionStatus === 'error' ? 'text-red-600' : 'text-gray-600'">
                         <div class="w-2 h-2 rounded-full" 
-                             :class="connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'"
+                             :class="connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : connectionStatus === 'error' ? 'bg-red-500 animate-pulse' : 'bg-gray-400'"
                              x-transition></div>
                         <span class="text-sm font-medium" x-text="connectionStatusText"></span>
                     </div>
@@ -62,19 +62,34 @@
                     <div class="flex items-center space-x-2">
                         <button @click="startConnection()" 
                                 :disabled="connectionStatus === 'connected' || connectionStatus === 'connecting'"
-                                class="px-3 py-1 text-sm rounded-lg transition-colors"
-                                :class="connectionStatus === 'connected' || connectionStatus === 'connecting' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-700 hover:bg-green-200'">
-                            Start
+                                class="px-3 py-1 text-sm rounded-lg transition-all duration-200 transform"
+                                :class="connectionStatus === 'connected' || connectionStatus === 'connecting' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-700 hover:bg-green-200 hover:scale-105 active:scale-95'"
+                                x-transition>
+                            <span x-show="connectionStatus !== 'connecting'">Start</span>
+                            <span x-show="connectionStatus === 'connecting'" class="flex items-center">
+                                <svg class="animate-spin -ml-1 mr-2 h-3 w-3 text-green-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Connecting...
+                            </span>
                         </button>
                         <button @click="stopConnection()" 
                                 :disabled="connectionStatus === 'disconnected'"
-                                class="px-3 py-1 text-sm rounded-lg transition-colors"
-                                :class="connectionStatus === 'disconnected' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-red-100 text-red-700 hover:bg-red-200'">
+                                class="px-3 py-1 text-sm rounded-lg transition-all duration-200 transform"
+                                :class="connectionStatus === 'disconnected' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-red-100 text-red-700 hover:bg-red-200 hover:scale-105 active:scale-95'"
+                                x-transition>
                             Stop
                         </button>
                         <button @click="clearFeed()" 
-                                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors">
+                                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95">
                             Clear
+                        </button>
+                        <button @click="reconnect()" 
+                                x-show="connectionStatus === 'error'"
+                                class="px-3 py-1 text-sm bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
+                                x-transition>
+                            Reconnect
                         </button>
                     </div>
                 </div>
@@ -152,7 +167,65 @@
                         <div class="w-2 h-2 bg-primary-500 rounded-full" 
                              x-show="connectionStatus === 'connected'" 
                              x-transition></div>
-                        <span x-text="connectionStatus === 'connected' ? 'Live' : 'Stopped'"></span>
+                        <span x-text="connectionStatus === 'connected' ? 'Live' : connectionStatus === 'error' ? 'Error' : 'Stopped'"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Error Banner -->
+            <div x-show="connectionStatus === 'error'" 
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 transform -translate-y-2"
+                 x-transition:enter-end="opacity-100 transform translate-y-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 transform translate-y-0"
+                 x-transition:leave-end="opacity-0 transform -translate-y-2"
+                 class="bg-red-50 border-b border-red-200 p-4">
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0">
+                        <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-sm font-medium text-red-800">Connection Error</h3>
+                        <p class="text-sm text-red-700 mt-1" x-text="errorMessage"></p>
+                        <div class="mt-2">
+                            <button @click="reconnect()" 
+                                    class="text-sm bg-red-100 text-red-800 hover:bg-red-200 px-3 py-1 rounded-md transition-colors">
+                                Try Again
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <button @click="dismissError()" 
+                                class="text-red-400 hover:text-red-600 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Network Status Banner -->
+            <div x-show="networkStatus === 'offline'" 
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 transform -translate-y-2"
+                 x-transition:enter-end="opacity-100 transform translate-y-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 transform translate-y-0"
+                 x-transition:leave-end="opacity-0 transform -translate-y-2"
+                 class="bg-orange-50 border-b border-orange-200 p-4">
+                <div class="flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192L5.636 18.364M12 2.25a9.75 9.75 0 109.75 9.75c0-1.856-.5-3.6-1.372-5.18"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-medium text-orange-800">Network Offline</h3>
+                        <p class="text-sm text-orange-700">You appear to be offline. Connection will resume when network is restored.</p>
                     </div>
                 </div>
             </div>
@@ -177,7 +250,7 @@
             
             <!-- Welcome/Instructions when disconnected -->
             <div class="h-96 flex items-center justify-center bg-gray-50" 
-                 x-show="connectionStatus !== 'connected'" 
+                 x-show="connectionStatus !== 'connected' && connectionStatus !== 'error'" 
                  x-transition>
                 <div class="text-center py-8">
                     <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -187,6 +260,31 @@
                     </div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2" x-text="connectionStatus === 'connecting' ? 'Connecting to SSE Stream...' : 'Ready to Connect'"></h3>
                     <p class="text-gray-500 max-w-sm" x-text="connectionStatus === 'connecting' ? 'Establishing Server-Sent Events connection...' : 'Click Start to begin receiving real-time data via Server-Sent Events. Data will appear here as it streams from the server.'"></p>
+                </div>
+            </div>
+            
+            <!-- Error State Display -->
+            <div class="h-96 flex items-center justify-center bg-red-50" 
+                 x-show="connectionStatus === 'error'" 
+                 x-transition>
+                <div class="text-center py-8 max-w-md">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-medium text-red-900 mb-2">Connection Failed</h3>
+                    <p class="text-red-700 mb-4" x-text="errorMessage"></p>
+                    <div class="space-y-2">
+                        <button @click="reconnect()" 
+                                class="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                            Try Reconnecting
+                        </button>
+                        <button @click="dismissError()" 
+                                class="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                            Dismiss
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -237,9 +335,14 @@
     <script>
         function sseApp() {
             return {
-                connectionStatus: 'disconnected', // 'disconnected', 'connecting', 'connected'
+                connectionStatus: 'disconnected', // 'disconnected', 'connecting', 'connected', 'error'
                 connectionStartTime: null,
                 currentTime: Date.now(), // Add reactive property for time updates
+                errorMessage: '',
+                networkStatus: 'online', // 'online', 'offline'
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 5,
+                reconnectDelay: 1000, // Start with 1 second
                 stats: {
                     totalEvents: 0,
                     eventsPerMinute: 0,
@@ -250,6 +353,7 @@
                     switch (this.connectionStatus) {
                         case 'connecting': return 'Connecting...';
                         case 'connected': return 'Connected';
+                        case 'error': return 'Error';
                         default: return 'Disconnected';
                     }
                 },
@@ -270,6 +374,9 @@
                     // Set up HTMX SSE event listeners
                     this.setupSSEListeners();
                     
+                    // Set up network status monitoring
+                    this.setupNetworkMonitoring();
+                    
                     // Update connection time every second
                     setInterval(() => {
                         this.currentTime = Date.now();
@@ -281,6 +388,9 @@
                     document.body.addEventListener('htmx:sseOpen', (event) => {
                         console.log('SSE connection opened via HTMX');
                         this.connectionStatus = 'connected';
+                        this.errorMessage = '';
+                        this.reconnectAttempts = 0;
+                        this.reconnectDelay = 1000; // Reset delay
                         // Don't override connectionStartTime if it's already set from startConnection
                         if (!this.connectionStartTime) {
                             this.connectionStartTime = Date.now();
@@ -290,21 +400,57 @@
                     
                     document.body.addEventListener('htmx:sseError', (event) => {
                         console.log('SSE connection error via HTMX:', event.detail);
-                        this.connectionStatus = 'disconnected';
-                        this.connectionStartTime = null;
+                        this.handleConnectionError('Failed to establish SSE connection. Please check your network connection and try again.');
                     });
                     
                     document.body.addEventListener('htmx:sseClose', (event) => {
                         console.log('SSE connection closed via HTMX');
-                        this.connectionStatus = 'disconnected';
-                        this.connectionStartTime = null;
+                        if (this.connectionStatus === 'connected') {
+                            // Unexpected close - treat as error
+                            this.handleConnectionError('Connection was unexpectedly closed. The server may be unavailable.');
+                        } else {
+                            // Expected close
+                            this.connectionStatus = 'disconnected';
+                            this.connectionStartTime = null;
+                        }
                     });
                     
                     // Listen for SSE message events specifically
                     document.body.addEventListener('htmx:sseMessage', (event) => {
                         console.log('SSE message received:', event.detail);
-                        // Update stats when message is received
-                        this.updateStats();
+                        
+                        // Handle different event types
+                        const eventType = event.detail.type || 'message';
+                        
+                        switch (eventType) {
+                            case 'connected':
+                                console.log('SSE connection confirmed by server');
+                                this.connectionStatus = 'connected';
+                                this.errorMessage = '';
+                                break;
+                                
+                            case 'error':
+                                console.log('SSE error event received:', event.detail.data);
+                                this.handleConnectionError(`Server error: ${event.detail.data}`);
+                                break;
+                                
+                            case 'close':
+                                console.log('SSE close event received');
+                                this.connectionStatus = 'disconnected';
+                                this.connectionStartTime = null;
+                                break;
+                                
+                            case 'message':
+                            default:
+                                // Update stats when message is received
+                                this.updateStats();
+                                // Reset error state if we're receiving messages
+                                if (this.connectionStatus === 'error') {
+                                    this.connectionStatus = 'connected';
+                                    this.errorMessage = '';
+                                }
+                                break;
+                        }
                     });
                     
                     // Listen for DOM updates after SSE messages are swapped
@@ -322,6 +468,90 @@
                             this.connectionStatus = 'connecting';
                         }
                     });
+                    
+                    // Listen for HTMX response errors
+                    document.body.addEventListener('htmx:responseError', (event) => {
+                        if (event.detail.xhr.url && event.detail.xhr.url.includes('/sse-stream')) {
+                            const status = event.detail.xhr.status;
+                            let errorMsg = 'Server error occurred while connecting.';
+                            
+                            if (status === 0) {
+                                errorMsg = 'Network error - unable to reach server.';
+                            } else if (status >= 500) {
+                                errorMsg = `Server error (${status}). Please try again later.`;
+                            } else if (status >= 400) {
+                                errorMsg = `Client error (${status}). Please refresh the page.`;
+                            }
+                            
+                            this.handleConnectionError(errorMsg);
+                        }
+                    });
+                    
+                    // Listen for HTMX timeout errors
+                    document.body.addEventListener('htmx:timeout', (event) => {
+                        if (event.detail.elt.id === 'sse-feed') {
+                            this.handleConnectionError('Connection timeout. Please check your network and try again.');
+                        }
+                    });
+                },
+                
+                setupNetworkMonitoring() {
+                    // Monitor network status
+                    window.addEventListener('online', () => {
+                        console.log('Network back online');
+                        this.networkStatus = 'online';
+                        // Auto-reconnect if we were connected before going offline
+                        if (this.connectionStatus === 'error' && this.errorMessage.includes('Network')) {
+                            setTimeout(() => this.reconnect(), 1000);
+                        }
+                    });
+                    
+                    window.addEventListener('offline', () => {
+                        console.log('Network went offline');
+                        this.networkStatus = 'offline';
+                        if (this.connectionStatus === 'connected') {
+                            this.handleConnectionError('Network connection lost. Will reconnect when network is restored.');
+                        }
+                    });
+                    
+                    // Initial network status
+                    this.networkStatus = navigator.onLine ? 'online' : 'offline';
+                },
+                
+                handleConnectionError(message) {
+                    console.log('Handling connection error:', message);
+                    this.connectionStatus = 'error';
+                    this.errorMessage = message;
+                    this.connectionStartTime = null;
+                    
+                    // Auto-retry logic for certain errors
+                    if (this.reconnectAttempts < this.maxReconnectAttempts && 
+                        this.networkStatus === 'online' && 
+                        !message.includes('Server error')) {
+                        
+                        this.reconnectAttempts++;
+                        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
+                        
+                        console.log(`Auto-retry attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+                        
+                        setTimeout(() => {
+                            if (this.connectionStatus === 'error') {
+                                this.reconnect();
+                            }
+                        }, delay);
+                    }
+                },
+                
+                reconnect() {
+                    console.log('Attempting to reconnect...');
+                    this.errorMessage = '';
+                    this.startConnection();
+                },
+                
+                dismissError() {
+                    this.connectionStatus = 'disconnected';
+                    this.errorMessage = '';
+                    this.reconnectAttempts = 0;
                 },
                 
                 startConnection() {

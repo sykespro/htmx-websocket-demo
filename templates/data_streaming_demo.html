@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Stream - Real-time Analytics</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen" x-data="dataStreamApp()">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                    <h1 class="text-xl font-semibold text-gray-900">Data Stream</h1>
+                    <a href="/" class="ml-4 px-3 py-1 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors">
+                        ← Chat Demo
+                    </a>
+                </div>
+                
+                <!-- Connection Status -->
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2" 
+                         :class="isConnected ? 'text-green-600' : 'text-red-600'">
+                        <div class="w-2 h-2 rounded-full" 
+                             :class="isConnected ? 'bg-green-500' : 'bg-red-500'"
+                             x-show="!isConnecting"
+                             x-transition></div>
+                        <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" 
+                             x-show="isConnecting"
+                             x-transition></div>
+                        <span class="text-sm font-medium" x-text="connectionStatus"></span>
+                    </div>
+                    
+                    <!-- Controls -->
+                    <div class="flex items-center space-x-2">
+                        <button @click="toggleStream()" 
+                                :disabled="!isConnected"
+                                class="px-3 py-1 text-sm rounded-lg transition-colors"
+                                :class="isStreaming ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'"
+                                x-text="isStreaming ? 'Stop' : 'Start'">
+                        </button>
+                        <button @click="clearData()" 
+                                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Total Messages</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="stats.totalMessages"></p>
+                    </div>
+                    <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Avg Value</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="stats.avgValue.toFixed(1)"></p>
+                    </div>
+                    <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Max Value</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="stats.maxValue"></p>
+                    </div>
+                    <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="7 11l5-5m0 0l5 5m-5-5v12"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Messages/sec</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="stats.messagesPerSecond.toFixed(1)"></p>
+                    </div>
+                    <div class="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <svg class="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Chart -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Real-time Data</h2>
+                    <div class="flex items-center space-x-2 text-sm text-gray-500">
+                        <div class="w-2 h-2 bg-primary-500 rounded-full" x-show="isStreaming" x-transition></div>
+                        <span x-text="isStreaming ? 'Live' : 'Paused'"></span>
+                    </div>
+                </div>
+                <div class="h-64 relative bg-white border rounded-lg">
+                    <canvas id="dataChart" width="400" height="200" style="display: block; width: 100%; height: 100%;"></canvas>
+                    <div x-show="!chartInitialized" class="absolute inset-0 flex items-center justify-center bg-gray-50 rounded">
+                        <div class="text-center">
+                            <div class="w-8 h-8 bg-gray-200 rounded-full animate-pulse mx-auto mb-2"></div>
+                            <p class="text-sm text-gray-500">Initializing chart...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Data Feed -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-900">Live Data Feed</h2>
+                </div>
+                <div class="h-80 overflow-y-auto p-4 bg-gray-50" id="dataFeed">
+                    <!-- Welcome message -->
+                    <div class="flex justify-center" x-show="dataPoints.length === 0" x-transition>
+                        <div class="text-center py-8">
+                            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">Waiting for Data</h3>
+                            <p class="text-gray-500 max-w-sm">Click "Start" to begin receiving real-time data streams. Data will appear here as it arrives.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Card -->
+        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4" x-show="!isStreaming" x-transition>
+            <div class="flex items-start space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-blue-800 mb-1">Data Streaming Demo</h3>
+                    <ul class="text-sm text-blue-700 space-y-1">
+                        <li>• Click "Start" to begin receiving simulated sensor data</li>
+                        <li>• Watch real-time charts and statistics update automatically</li>
+                        <li>• Data includes temperature, humidity, and pressure readings</li>
+                        <li>• Open multiple tabs to see synchronized data streams</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global chart variables - completely outside Alpine.js
+        let globalChart = null;
+        let globalChartLabels = [];
+        let globalChartTempData = [];
+        let globalChartHumidityData = [];
+        
+        // Chart management functions
+        function initGlobalChart() {
+            const canvas = document.getElementById('dataChart');
+            if (!canvas) {
+                return false;
+            }
+            
+            try {
+                // Destroy existing chart
+                if (globalChart) {
+                    globalChart.destroy();
+                    globalChart = null;
+                }
+                
+                // Reset data arrays
+                globalChartLabels = [];
+                globalChartTempData = [];
+                globalChartHumidityData = [];
+                
+                const ctx = canvas.getContext('2d');
+                
+                globalChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: globalChartLabels,
+                        datasets: [{
+                            label: 'Temperature (°C)',
+                            data: globalChartTempData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }, {
+                            label: 'Humidity (%)',
+                            data: globalChartHumidityData,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: false,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                grid: {
+                                    display: true
+                                }
+                            },
+                            y: {
+                                display: true,
+                                grid: {
+                                    display: true
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        },
+                        animation: {
+                            duration: 0
+                        }
+                    }
+                });
+                
+                return true;
+            } catch (error) {
+                console.error('Error initializing chart:', error);
+                return false;
+            }
+        }
+        
+        function updateGlobalChart(data, timestamp) {
+            if (!globalChart) {
+                return;
+            }
+            
+            try {
+                // Keep only last 20 data points
+                if (globalChartLabels.length >= 20) {
+                    globalChartLabels.shift();
+                    globalChartTempData.shift();
+                    globalChartHumidityData.shift();
+                }
+                
+                // Add new data
+                globalChartLabels.push(timestamp);
+                globalChartTempData.push(data.temperature);
+                globalChartHumidityData.push(data.humidity);
+                
+                // Update chart
+                globalChart.update('none');
+            } catch (error) {
+                console.error('Error updating chart:', error);
+            }
+        }
+        
+        function clearGlobalChart() {
+            if (globalChart) {
+                globalChartLabels.length = 0;
+                globalChartTempData.length = 0;
+                globalChartHumidityData.length = 0;
+                globalChart.update('none');
+            }
+        }
+
+        function dataStreamApp() {
+            return {
+                socket: null,
+                isConnected: false,
+                isConnecting: false,
+                isStreaming: false,
+                dataPoints: [],
+                chartInitialized: false,
+                stats: {
+                    totalMessages: 0,
+                    avgValue: 0,
+                    maxValue: 0,
+                    messagesPerSecond: 0
+                },
+                startTime: null,
+                
+                get connectionStatus() {
+                    if (this.isConnecting) return 'Connecting...';
+                    return this.isConnected ? 'Connected' : 'Disconnected';
+                },
+                
+                init() {
+                    // Initialize chart after a delay
+                    setTimeout(() => {
+                        const success = initGlobalChart();
+                        this.chartInitialized = success;
+                    }, 500);
+                    // Initialize WebSocket
+                    this.initWebSocket();
+                },
+                
+                initChart() {
+                    // Delegate to global function
+                    const success = initGlobalChart();
+                    this.chartInitialized = success;
+                    return success;
+                },
+                
+                initWebSocket() {
+                    this.isConnecting = true;
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/data`;
+                    
+                    this.socket = new WebSocket(wsUrl);
+                    
+                    this.socket.onopen = (event) => {
+                        this.isConnected = true;
+                        this.isConnecting = false;
+                    };
+                    
+                    this.socket.onclose = (event) => {
+                        this.isConnected = false;
+                        this.isConnecting = false;
+                        this.isStreaming = false;
+                        
+                        // Attempt to reconnect after 3 seconds
+                        setTimeout(() => this.initWebSocket(), 3000);
+                    };
+                    
+                    this.socket.onerror = (error) => {
+                        this.isConnecting = false;
+                    };
+                    
+                    this.socket.onmessage = (event) => {
+                        this.processDataPoint(event.data);
+                    };
+                },
+                
+                toggleStream() {
+                    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+                    
+                    this.isStreaming = !this.isStreaming;
+                    
+                    if (this.isStreaming) {
+                        this.startTime = Date.now();
+                        this.socket.send(JSON.stringify({ action: 'start_stream' }));
+                    } else {
+                        this.socket.send(JSON.stringify({ action: 'stop_stream' }));
+                    }
+                },
+                
+                clearData() {
+                    this.dataPoints = [];
+                    this.stats = {
+                        totalMessages: 0,
+                        avgValue: 0,
+                        maxValue: 0,
+                        messagesPerSecond: 0
+                    };
+                    
+                    // Clear global chart
+                    clearGlobalChart();
+                    
+                    // Clear feed
+                    const dataFeed = document.getElementById('dataFeed');
+                    if (dataFeed) {
+                        const children = Array.from(dataFeed.children);
+                        children.forEach(child => {
+                            if (child.classList.contains('data-item')) {
+                                child.remove();
+                            }
+                        });
+                    }
+                },
+                
+                processDataPoint(rawData) {
+                    try {
+                        const data = JSON.parse(rawData);
+                        const timestamp = new Date().toLocaleTimeString();
+                        
+                        // Add to data points
+                        this.dataPoints.push(data);
+                        
+                        // Update chart
+                        this.updateChart(data, timestamp);
+                        
+                        // Update feed
+                        this.addToFeed(data, timestamp);
+                        
+                        // Update statistics
+                        this.updateStats(data);
+                        
+                    } catch (error) {
+                        console.error('Error processing data point:', error);
+                    }
+                },
+                
+                updateChart(data, timestamp) {
+                    // Delegate to global function
+                    updateGlobalChart(data, timestamp);
+                },
+                
+                addToFeed(data, timestamp) {
+                    const dataFeed = document.getElementById('dataFeed');
+                    
+                    const dataElement = document.createElement('div');
+                    dataElement.className = 'data-item animate-in slide-in-from-bottom-2 duration-300 mb-2 p-3 bg-white rounded-lg border border-gray-200';
+                    
+                    dataElement.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-2 h-2 bg-primary-500 rounded-full"></div>
+                                <div class="text-sm">
+                                    <span class="font-medium text-gray-900">Sensor Data</span>
+                                    <span class="text-gray-500 ml-2">${timestamp}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-4 text-sm">
+                                <span class="text-blue-600">🌡️ ${data.temperature}°C</span>
+                                <span class="text-green-600">💧 ${data.humidity}%</span>
+                                <span class="text-purple-600">📊 ${data.pressure} hPa</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    dataFeed.appendChild(dataElement);
+                    
+                    // Keep only last 50 items
+                    const items = dataFeed.querySelectorAll('.data-item');
+                    if (items.length > 50) {
+                        items[0].remove();
+                    }
+                    
+                    dataFeed.scrollTop = dataFeed.scrollHeight;
+                },
+                
+                updateStats(data) {
+                    this.stats.totalMessages++;
+                    
+                    // Calculate average temperature
+                    const temperatures = this.dataPoints.map(d => d.temperature);
+                    this.stats.avgValue = temperatures.reduce((a, b) => a + b, 0) / temperatures.length;
+                    
+                    // Find max temperature
+                    this.stats.maxValue = Math.max(...temperatures);
+                    
+                    // Calculate messages per second
+                    if (this.startTime) {
+                        const elapsed = (Date.now() - this.startTime) / 1000;
+                        this.stats.messagesPerSecond = this.stats.totalMessages / elapsed;
+                    }
+                }
+            }
+        }
+        
+        // Add custom CSS for animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slide-in-from-bottom {
+                from {
+                    opacity: 0;
+                    transform: translateY(10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            .animate-in {
+                animation-fill-mode: both;
+            }
+            
+            .slide-in-from-bottom-2 {
+                animation-name: slide-in-from-bottom;
+            }
+            
+            .duration-300 {
+                animation-duration: 300ms;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>

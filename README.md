@@ -1,14 +1,22 @@
-# HTMX WebSocket Chat Demo
+# HTMX WebSocket Demo
 
-A simple real-time chat application using HTMX and FastAPI WebSockets.
+A collection of real-time applications using HTMX and FastAPI WebSockets.
 
 ## Features
 
+### Chat Demo (`/`)
 - Real-time messaging using WebSockets
 - HTMX for seamless frontend interactions
 - Multiple user support
 - Connection status indicator
 - Clean, responsive UI
+
+### Data Streaming Demo (`/data-stream`)
+- Real-time sensor data simulation
+- Live charts and statistics
+- WebSocket-based data streaming
+- Interactive controls (start/stop/clear)
+- Real-time analytics dashboard
 
 ## Setup
 
@@ -31,10 +39,18 @@ uvicorn main:app --reload
 
 ## Usage
 
+### Chat Demo
 - Enter your name in the first input field
 - Type messages and click Send
 - Open multiple browser tabs to test real-time messaging
 - Messages appear instantly for all connected users
+
+### Data Streaming Demo
+- Navigate to `/data-stream`
+- Click "Start" to begin receiving simulated sensor data
+- Watch real-time charts and statistics update automatically
+- Use "Stop" to pause streaming and "Clear" to reset data
+- Open multiple tabs to see synchronized data streams
 
 ## How it Works
 
@@ -42,3 +58,4 @@ uvicorn main:app --reload
 - HTMX WebSocket extension manages frontend WebSocket communication
 - Messages are sent as JSON and broadcast to all connected clients
 - The UI updates automatically when new messages arrive
+- Data streaming uses separate WebSocket endpoint with asyncio tasks for continuous data generation

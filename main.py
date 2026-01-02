@@ -24,7 +24,7 @@ class SensorReading(BaseModel):
     
     def to_html(self) -> str:
         """Convert to HTML for SSE transmission"""
-        return f'<div class="data-item animate-in slide-in-from-bottom-2 duration-300 mb-2 p-3 bg-white rounded-lg border border-gray-200"><div class="flex items-center justify-between"><div class="flex items-center space-x-4"><div class="w-2 h-2 bg-blue-500 rounded-full"></div><div class="text-sm"><span class="font-medium text-gray-900">SSE Data</span><span class="text-gray-500 ml-2">{self.timestamp.strftime("%H:%M:%S")}</span></div></div><div class="flex items-center space-x-4 text-sm"><span class="text-blue-600">🌡️ {self.temperature}°C</span><span class="text-green-600">💧 {self.humidity}%</span><span class="text-purple-600">📊 {self.pressure} hPa</span></div></div></div>'
+        return f'<div class="data-item animate-in slide-in-from-bottom-2 duration-300 mb-2 p-3 bg-white rounded-lg border border-gray-200"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center space-x-4 mb-2 sm:mb-0"><div class="w-2 h-2 bg-blue-500 rounded-full"></div><div class="text-sm"><span class="font-medium text-gray-900">SSE Data</span><span class="text-gray-500 ml-2">{self.timestamp.strftime("%H:%M:%S")}</span></div></div><div class="flex items-center space-x-3 sm:space-x-4 text-xs sm:text-sm"><span class="text-blue-600">🌡️ {self.temperature}°C</span><span class="text-green-600">💧 {self.humidity}%</span><span class="text-purple-600">📊 {self.pressure} hPa</span></div></div></div>'
 
 app = FastAPI()
 
